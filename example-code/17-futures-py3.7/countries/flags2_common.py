@@ -21,7 +21,7 @@ DEFAULT_CONCUR_REQ = 1
 MAX_CONCUR_REQ = 1
 
 SERVERS = {
-    'REMOTE': 'http://flupy.org/data/flags',
+    'REMOTE': 'https://github.com/lih0905/lih0905.github.io/raw/master/flags',
     'LOCAL':  'http://localhost:8001/flags',
     'DELAY':  'http://localhost:8002/flags',
     'ERROR':  'http://localhost:8003/flags',
