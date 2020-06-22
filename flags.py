@@ -10,8 +10,8 @@ import requests
 POP20_CC = ('8_1 8_2 8_3 8_4 8_5 '
            '13_1 13_2 13_3 15_1').split()
 
-#BASE_URL = 'http://flupy.org/data/flags'
-BASE_URL = 'https://github.com/lih0905/Fluent_Python/raw/master/images/'
+BASE_URL = 'http://flupy.org/data/flags'
+#BASE_URL = 'https://github.com/lih0905/Fluent_Python/raw/master/images/'
 
 DEST_DIR = 'downloads/'
 
