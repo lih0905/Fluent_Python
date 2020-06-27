@@ -37,7 +37,7 @@ def supervisor():
 
 def main():
     loop = asyncio.get_event_loop()
-    result = loop.run_util_complete(supervisor())
+    result = loop.run_until_complete(supervisor())
     loop.close()
     print('Answer:', result)
 
