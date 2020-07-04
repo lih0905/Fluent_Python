@@ -1,21 +1,9 @@
 """Download flags of countries (with error handling).
 
-asyncio yield-from version
-
-Sample run::
-
-    $ python3 flags2_asyncio.py -s ERROR -e -m 200
-    ERROR site: http://localhost:8003/flags
-    Searching for 676 flags: from AA to ZZ
-    200 concurrent connections will be used.
-    --------------------
-    146 flags downloaded.
-    363 not found.
-    167 errors.
-    Elapsed time: 2.59s
+asyncio version using thread pool to save files
 
 """
-# BEGIN FLAGS2_ASYNCIO_TOP
+
 import asyncio
 import collections
 import contextlib
@@ -32,13 +20,13 @@ DEFAULT_CONCUR_REQ = 5
 MAX_CONCUR_REQ = 1000
 
 
-class FetchError(Exception):  # <1>
+class FetchError(Exception):
     def __init__(self, country_code):
         self.country_code = country_code
 
 
 @asyncio.coroutine
-def get_flag(base_url, cc): # <2>
+def get_flag(base_url, cc):
     url = '{}/{cc}/{cc}.gif'.format(base_url, cc=cc.lower())
     resp = yield from aiohttp.request('GET', url)
     with contextlib.closing(resp):
@@ -53,18 +41,21 @@ def get_flag(base_url, cc): # <2>
                 headers=resp.headers)
 
 
+# BEGIN FLAGS2_ASYNCIO_EXECUTOR
 @asyncio.coroutine
-def download_one(cc, base_url, semaphore, verbose):  # <3>
+def download_one(cc, base_url, semaphore, verbose):
     try:
-        with (yield from semaphore):  # <4>
-            image = yield from get_flag(base_url, cc)  # <5>
-    except web.HTTPNotFound:  # <6>
+        with (yield from semaphore):
+            image = yield from get_flag(base_url, cc)
+    except web.HTTPNotFound:
         status = HTTPStatus.not_found
         msg = 'not found'
     except Exception as exc:
-        raise FetchError(cc) from exc  # <7>
+        raise FetchError(cc) from exc
     else:
-        save_flag(image, cc.lower() + '.gif')  # <8>
+        loop = asyncio.get_event_loop()  # <1>
+        loop.run_in_executor(None,  # <2>
+                save_flag, image, cc.lower() + '.gif')  # <3>
         status = HTTPStatus.ok
         msg = 'OK'
 
@@ -72,28 +63,27 @@ def download_one(cc, base_url, semaphore, verbose):  # <3>
         print(cc, msg)
 
     return Result(status, cc)
-# END FLAGS2_ASYNCIO_TOP
+# END FLAGS2_ASYNCIO_EXECUTOR
 
-# BEGIN FLAGS2_ASYNCIO_DOWNLOAD_MANY
 @asyncio.coroutine
-def downloader_coro(cc_list, base_url, verbose, concur_req):  # <1>
+def downloader_coro(cc_list, base_url, verbose, concur_req):
     counter = collections.Counter()
-    semaphore = asyncio.Semaphore(concur_req)  # <2>
+    semaphore = asyncio.Semaphore(concur_req)
     to_do = [download_one(cc, base_url, semaphore, verbose)
-             for cc in sorted(cc_list)]  # <3>
+             for cc in sorted(cc_list)]
 
-    to_do_iter = asyncio.as_completed(to_do)  # <4>
+    to_do_iter = asyncio.as_completed(to_do)
     if not verbose:
-        to_do_iter = tqdm.tqdm(to_do_iter, total=len(cc_list))  # <5>
-    for future in to_do_iter:  # <6>
+        to_do_iter = tqdm.tqdm(to_do_iter, total=len(cc_list))
+    for future in to_do_iter:
         try:
-            res = yield from future  # <7>
-        except FetchError as exc:  # <8>
-            country_code = exc.country_code  # <9>
+            res = yield from future
+        except FetchError as exc:
+            country_code = exc.country_code
             try:
-                error_msg = exc.__cause__.args[0]  # <10>
+                error_msg = exc.__cause__.args[0]
             except IndexError:
-                error_msg = exc.__cause__.__class__.__name__  # <11>
+                error_msg = exc.__cause__.__class__.__name__
             if verbose and error_msg:
                 msg = '*** Error for {}: {}'
                 print(msg.format(country_code, error_msg))
@@ -101,20 +91,19 @@ def downloader_coro(cc_list, base_url, verbose, concur_req):  # <1>
         else:
             status = res.status
 
-        counter[status] += 1  # <12>
+        counter[status] += 1
 
-    return counter  # <13>
+    return counter
 
 
 def download_many(cc_list, base_url, verbose, concur_req):
     loop = asyncio.get_event_loop()
     coro = downloader_coro(cc_list, base_url, verbose, concur_req)
-    counts = loop.run_until_complete(coro)  # <14>
-    loop.close()  # <15>
+    counts = loop.run_until_complete(coro)
+    loop.close()
 
     return counts
 
 
 if __name__ == '__main__':
     main(download_many, DEFAULT_CONCUR_REQ, MAX_CONCUR_REQ)
-# END FLAGS2_ASYNCIO_DOWNLOAD_MANY

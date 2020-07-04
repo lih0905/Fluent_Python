@@ -1,24 +1,11 @@
 """Download flags of countries (with error handling).
 
-asyncio yield-from version
-
-Sample run::
-
-    $ python3 flags2_asyncio.py -s ERROR -e -m 200
-    ERROR site: http://localhost:8003/flags
-    Searching for 676 flags: from AA to ZZ
-    200 concurrent connections will be used.
-    --------------------
-    146 flags downloaded.
-    363 not found.
-    167 errors.
-    Elapsed time: 2.59s
+asyncio async/await version
 
 """
 # BEGIN FLAGS2_ASYNCIO_TOP
 import asyncio
 import collections
-import contextlib
 
 import aiohttp
 from aiohttp import web
@@ -37,14 +24,11 @@ class FetchError(Exception):  # <1>
         self.country_code = country_code
 
 
-@asyncio.coroutine
-def get_flag(base_url, cc): # <2>
+async def get_flag(session, base_url, cc): # <2>
     url = '{}/{cc}/{cc}.gif'.format(base_url, cc=cc.lower())
-    resp = yield from aiohttp.request('GET', url)
-    with contextlib.closing(resp):
+    async with session.get(url) as resp:
         if resp.status == 200:
-            image = yield from resp.read()
-            return image
+            return await resp.read()
         elif resp.status == 404:
             raise web.HTTPNotFound()
         else:
@@ -53,11 +37,10 @@ def get_flag(base_url, cc): # <2>
                 headers=resp.headers)
 
 
-@asyncio.coroutine
-def download_one(cc, base_url, semaphore, verbose):  # <3>
+async def download_one(session, cc, base_url, semaphore, verbose):  # <3>
     try:
-        with (yield from semaphore):  # <4>
-            image = yield from get_flag(base_url, cc)  # <5>
+        async with semaphore:  # <4>
+            image = await get_flag(session, base_url, cc)  # <5>
     except web.HTTPNotFound:  # <6>
         status = HTTPStatus.not_found
         msg = 'not found'
@@ -75,33 +58,33 @@ def download_one(cc, base_url, semaphore, verbose):  # <3>
 # END FLAGS2_ASYNCIO_TOP
 
 # BEGIN FLAGS2_ASYNCIO_DOWNLOAD_MANY
-@asyncio.coroutine
-def downloader_coro(cc_list, base_url, verbose, concur_req):  # <1>
+async def downloader_coro(cc_list, base_url, verbose, concur_req):  # <1>
     counter = collections.Counter()
     semaphore = asyncio.Semaphore(concur_req)  # <2>
-    to_do = [download_one(cc, base_url, semaphore, verbose)
-             for cc in sorted(cc_list)]  # <3>
+    async with aiohttp.ClientSession() as session:  # <8>
+        to_do = [download_one(session, cc, base_url, semaphore, verbose)
+                for cc in sorted(cc_list)]  # <3>
 
-    to_do_iter = asyncio.as_completed(to_do)  # <4>
-    if not verbose:
-        to_do_iter = tqdm.tqdm(to_do_iter, total=len(cc_list))  # <5>
-    for future in to_do_iter:  # <6>
-        try:
-            res = yield from future  # <7>
-        except FetchError as exc:  # <8>
-            country_code = exc.country_code  # <9>
+        to_do_iter = asyncio.as_completed(to_do)  # <4>
+        if not verbose:
+            to_do_iter = tqdm.tqdm(to_do_iter, total=len(cc_list))  # <5>
+        for future in to_do_iter:  # <6>
             try:
-                error_msg = exc.__cause__.args[0]  # <10>
-            except IndexError:
-                error_msg = exc.__cause__.__class__.__name__  # <11>
-            if verbose and error_msg:
-                msg = '*** Error for {}: {}'
-                print(msg.format(country_code, error_msg))
-            status = HTTPStatus.error
-        else:
-            status = res.status
+                res = await future  # <7>
+            except FetchError as exc:  # <8>
+                country_code = exc.country_code  # <9>
+                try:
+                    error_msg = exc.__cause__.args[0]  # <10>
+                except IndexError:
+                    error_msg = exc.__cause__.__class__.__name__  # <11>
+                if verbose and error_msg:
+                    msg = '*** Error for {}: {}'
+                    print(msg.format(country_code, error_msg))
+                status = HTTPStatus.error
+            else:
+                status = res.status
 
-        counter[status] += 1  # <12>
+            counter[status] += 1  # <12>
 
     return counter  # <13>
 
